@@ -1,0 +1,96 @@
+---
+title: "BISC 577 Unit 3 HW 2"
+author: "Liana Engie"
+date: "May 9, 2016"
+output: pdf_document
+---
+
+# BISC 577 Unit 3 HW 2
+
+
+
+First, the necessary packages are loaded into R. I am using R version 3.3.0.
+```{r setup, echo=FALSE}
+library(ggplot2)
+library(DNAshapeR)
+library(caret)
+library(AnnotationHub)
+```
+
+## High Throughput Binding Assays
+
+Systematic evolution of ligands by exponential enrichment with next-gen sequencing, or SELEX-seq, is an iterative \textit{in vitro} method that identifies DNA sequences that bind to the desired protein or peptide. A large DNA library is generated and the protein is introduced. Those that bind the protein are separated from the unbound DNA and these are sequenced and used as the new DNA library. Cycles are repeated with different selection criteria. SELEX-seq selects moderate to highly selective binding sites, identifies more sites than traditional SELEX, and requires fewer iterations.
+    
+    Protein binding microarrays, or PBMs, is a procedure that involves a surface where tens of thousands of double stranded DNA sequences are bound. Multiple proteins can be applied and the amount of bound protein is quantified using fluorescence.
+    
+    Chromatin immuno precipitation sequencing, also known as ChIP-seq, identifies DNA binding sites \textit{in vivo}. Cells are lysed and their DNA sonicated. Antibodies targeted to the desired protein are added and the proteins, with the DNA it's bound to, are pulled out via beads that are attached to the antibodies. The proteins are unlinked from the DNA pieces and these segments are sequenced.
+
+
+## Building prediction models for \textit{in vitro} data
+
+\textit{In vitro} data from gcPBM is used in the following section. We will compare prediction models using sequence alone ("1-mer" sequence model) versus sequence and shape features together ("1-mer+shape" model).
+
+```{r prep}
+#shape prediction
+md <- "Mad.txt.fa"
+predMd <- getShape(md)
+mx <- "Max.txt.fa"
+predMx <- getShape(mx)
+myc <- "Myc.txt.fa"
+predMyc <- getShape(myc)
+
+#Feature vectors for each data set
+featureType <- c("1-mer", "1-shape")
+featVectMd <- encodeSeqShape(md,predMd,featureType)
+featVectMx <- encodeSeqShape(mx,predMx,featureType)
+featVectMyc <- encodeSeqShape(myc,predMyc,featureType)
+#head(featVectMd)
+#head(featVectMx)
+#head(featVectMyc)
+
+md_data <- read.table("Mad.txt")
+mx_data <- read.table("Max.txt")
+myc_data <- read.table("Myc.txt")
+#Could put all into one data frame but it might be more convenient to keep them separate
+dfMd <- data.frame(affinity=md_data$V2, featVectMd)
+dfMx <- data.frame(affinity=mx_data$V2, featVectMx)
+dfMyc <- data.frame(affinity=myc_data$V2, featVectMyc)
+
+#Settings for caret package
+trainControl <- trainControl(method = "cv", number = 10, savePredictions = TRUE)
+
+#Prediction without (then with) L2-regularized
+modelMd <- train (affinity~ ., data = dfMd, trControl=trainControl,
+method = "lm", preProcess=NULL)
+
+modelMd2 <- train(affinity~., data = dfMd, trControl=trainControl,
+method = "glmnet", tuneGrid = data.frame(alpha = 0, lambda = c(2^c(-15:15))))
+
+modelMx <- train (affinity~ ., data = dfMx, trControl=trainControl,
+method = "lm", preProcess=NULL)
+
+modelMx2 <- train(affinity~., data = dfMx, trControl=trainControl,
+method = "glmnet", tuneGrid = data.frame(alpha = 0, lambda = c(2^c(-15:15))))
+
+modelMyc <- train (affinity~ ., data = dfMyc, trControl=trainControl,
+method = "lm", preProcess=NULL)
+
+modelMyc2 <- train(affinity~., data = dfMyc, trControl=trainControl,
+method = "glmnet", tuneGrid = data.frame(alpha = 0, lambda = c(2^c(-15:15))))
+
+#Outputting the actual data
+summary(modelMd)
+modelMd2
+summary(modelMx)
+modelMx2
+summary(modelMyc)
+modelMyc2
+```
+
+```{r performance graphs}
+
+```
+
+
+
+
