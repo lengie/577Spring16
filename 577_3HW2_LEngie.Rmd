@@ -15,6 +15,7 @@ library(rtracklayer)
 library(BSgenome.Mmusculus.UCSC.mm10)
 library(e1071)
 library(ROCR)
+library(pROC)
 ```
 
 ## High Throughput Binding Assays
@@ -144,7 +145,7 @@ B-DNA is known to have a helix twist of about 36 degrees, while A-DNA has a twis
 
 ## Prediction models for \textot{in virtro} data
 
-For the last portion of this report, I redownload the CTCF data to make a file of only 30 basepairs. We want to be able to generate sequences from random genomic regions which do not overlap with genomic regions from the ChIP-seq data. 
+For the last portion of this report, I redownload the CTCF data to make a file of only 30 basepairs. We want to be able to generate sequences from random genomic regions which do not overlap with genomic regions from the ChIP-seq data. A function to create this data follows, differentiating between the two categories of "bound" and "unbound" data.
 
 ```{r vivo}
 sampleSize <- 1000
@@ -181,9 +182,10 @@ getFasta(randomGr, BSgenome.Mmusculus.UCSC.mm10, width = 30, filename = "unbound
 
 
 ## Merge bound and unbound data
-# Combine two datasets and generate one file
+# Combine two datasets and generate one file for linear regression
 boundFasta <- readBStringSet("bound.fa")
-boundFasta <- sample(boundFasta, sampleSize) # Only randomly choose fixed size of data for sampling
+# Only randomly choose fixed size of data for sampling
+boundFasta <- sample(boundFasta, sampleSize) 
 unboundFasta <- readBStringSet("unbound.fa")
 names(unboundFasta) <- paste0( names(unboundFasta), "_unbound")
 writeXStringSet( c(boundFasta, unboundFasta), "AllCTCF.fa" )
@@ -201,7 +203,7 @@ write.table(rbind(boundTxt, unboundTxt), "AllCTCF.txt",
 
 
 Logistic regression models for "1-mer" and "1-mer+shape" features, as performed earlier, are done on this data. 
-```{r logistics}
+```{r logistics, results=FALSE}
 ## DNAshapeR prediction
 BUnbPred <- getShape("AllCTCF.fa")
 
@@ -216,7 +218,7 @@ exp_data <- read.table("AllCTCF.txt")
 exp_data$V2 <- ifelse(exp_data$V2 == 1 , "Y", "N")
 df1 <- data.frame(isBound = exp_data$V2, featureVector)
 df2 <- data.frame(isBound = exp_data$V2, featureVector2)
-# Set parameters for Caret
+# Set parameters for Caret with 2-fold cross validation
 trainControl <- trainControl(method = "cv", number = 2, 
                              savePredictions = TRUE, classProbs = TRUE)
 # Perform prediction
@@ -224,18 +226,23 @@ model1 <- train(isBound~ ., data = df1, trControl = trainControl,
                method = "glm", family = binomial, metric ="ROC")
 model2 <- train(isBound~ ., data = df2, trControl = trainControl,
                method = "glm", family = binomial, metric ="ROC")
+```
+Now we look at the data that emerged, and plot the area under the curve graphs.
+```{r Q8}
 summary(model1)
 summary(model2)
 
-## Plot the AUROC graph
-prediction <- prediction( model$pred$Y, model$pred$obs )
-performance <- performance( prediction, "tpr", "fpr" )
-plot(performance)
+## Plot the AUROC graph and calculate the AUROC
+roc_1 <- roc(model1$pred$obs, model1$pred$Y)
+plot(roc_1, col="red")
 
-## Caluculate AUROC
-auc <- performance(prediction, "auc")
-auc <- unlist(slot(auc, "y.values"))
-auc
+roc_2 <- roc(model2$pred$obs, model2$pred$Y)
+plot(roc_2, col="blue")
+
+auc_1 <- auc(roc_1)
+auc_1
+auc_2 <- auc(roc_2)
+auc_2
 ```
-Discuss what learned from results
+Both AUC graphs are much better than 50%
 
