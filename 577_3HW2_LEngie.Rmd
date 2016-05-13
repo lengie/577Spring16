@@ -31,7 +31,7 @@ Chromatin immuno precipitation sequencing, also known as ChIP-seq, identifies DN
 
 \textit{In vitro} data from gcPBM is used in the following section. We will compare prediction models using sequence alone ("1-mer" sequence model) versus sequence and shape features together ("1-mer+shape" model). The \texttt{caret} package allows us to run simple machine learning algorithms on the data, splitting the data into training and test data. We will look at predicting DNA binding using shape and sequence or sequence alone, then compare the coefficients of determination. These, the $R^{2}$ values, will help us compare the two methods. Code results are hidden so outputted code and warnings are not displayed. A visual comparison follows in the next block of code.
 
-```{r prep, results="hide"}
+```{r prep, results="hide", cache=TRUE}
 #shape prediction
 md <- "Mad.txt.fa"
 predMd <- getShape(md)
@@ -113,7 +113,7 @@ PBM data, as stated above, shows the binding of proteins to DNA. The results sho
 ## High throughput \textit{in vivo} data analysis
 
 First ChIP-seq data for the CTCF transcription factor of \textit{Mus musculus} is saved as a fasta file, prepped via the Annotation Hub package.
-```{r annotation}
+```{r annotation, cache=TRUE}
 ah <- AnnotationHub()
 unique(ah$dataprovider)
 unique(ah$species)
@@ -122,7 +122,7 @@ ah <- subset(ah, species == "Mus musculus")
 ah
 ```
 From this we see a list of all data available for \textit{Mus musculus}, which, honestly, wasn't really necessary because Tsu-Pei has already provided the ID for the data that we need:
-```{r fasta}
+```{r fasta, cache=TRUE}
 CTCF <- ah[["AH28451"]]
 seqlevelsStyle(CTCF) <- "UCSC"
 getFasta(CTCF, BSgenome.Mmusculus.UCSC.mm10, width = 150, filename = "CTCF.fa")
@@ -143,11 +143,11 @@ plotShape(predMus$HelT)
 
 B-DNA is known to have a helix twist of about 36 degrees, while A-DNA has a twist of 32.7 degrees. We can see that the helix twist of the data is sort of in between, holding a range between 34-35 degrees. B-DNA also has a smaller minor groove width than A-DNA. The minor groove width throughout this data is more indicative of B-DNA. Propeller twist of both A and B-DNA, however, is 0, as the two base pairs that align with each other tend to sit flat. In this base, the bases are rotated in relation to each other. There is also a slight roll, where the stacked base pairs are at a slight angle in relation to each other. These distortions would seem to be caused by the binding of the CTCF transcription factor to the DNA, or, perhaps, the distortions in the data allow for the binding of the TF.
 
-## Prediction models for \textot{in virtro} data
+## Prediction models for \textit{in vitro} data
 
 For the last portion of this report, I redownload the CTCF data to make a file of only 30 basepairs. We want to be able to generate sequences from random genomic regions which do not overlap with genomic regions from the ChIP-seq data. A function to create this data follows, differentiating between the two categories of "bound" and "unbound" data.
 
-```{r vivo}
+```{r vivo, cache = TRUE}
 sampleSize <- 1000
 
 # Reducing the sequence length of bound ChIP-seq data
@@ -203,7 +203,7 @@ write.table(rbind(boundTxt, unboundTxt), "AllCTCF.txt",
 
 
 Logistic regression models for "1-mer" and "1-mer+shape" features, as performed earlier, are done on this data. 
-```{r logistics, results=FALSE}
+```{r logistics, results=FALSE, cache=TRUE}
 ## DNAshapeR prediction
 BUnbPred <- getShape("AllCTCF.fa")
 
@@ -232,17 +232,19 @@ Now we look at the data that emerged, and plot the area under the curve graphs.
 summary(model1)
 summary(model2)
 
+#model1_2 <- train(isBound~ ., data = df1, trControl=trainControl,
+#                  method = "glmnet", tuneGrid = data.frame(alpha = 0, lambda = #c(2^c(-15:15))))
+#model2_2 <- train(isBound~ ., data = df1, trControl=trainControl,
+#                  method = "glmnet", tuneGrid = data.frame(alpha = 0, lambda = #c(2^c(-15:15))))
+#mean(model1_2$results$Rsquared,na.rm=TRUE)
+#mean(model2_2$results$Rsquared,na.rm=TRUE)
+
 ## Plot the AUROC graph and calculate the AUROC
 roc_1 <- roc(model1$pred$obs, model1$pred$Y)
 plot(roc_1, col="red")
 
 roc_2 <- roc(model2$pred$obs, model2$pred$Y)
 plot(roc_2, col="blue")
-
-auc_1 <- auc(roc_1)
-auc_1
-auc_2 <- auc(roc_2)
-auc_2
 ```
-Both AUC graphs are much better than 50%
-
+Both AUC graphs are much better than 50%. The AUC for the "1-mer" model is 0.8376 and the AUC for "1-mer+shape" is 0.8053. It appears that sequence and shape together do not improve binding prediction for CTCF's DNA binding site. To check these results we should run more simulations, and on a longer sequence rather than 30bp alone. We could use more training sequences to ensure that the model is the most accurate one we can get with the information provided.
+(in R markdown, the file is rerun every time the pdf is knit, so the random unbound sequence is new for each time I make the PDF. The AUC values therefore might be a bit different than that reported by the above function. I can cache the R blocks but I did so too late for this compiling run.)
