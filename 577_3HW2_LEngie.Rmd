@@ -5,32 +5,32 @@ date: "May 9, 2016"
 output: pdf_document
 ---
 
-# BISC 577 Unit 3 HW 2
-
-
-
-First, the necessary packages are loaded into R. I am using R version 3.3.0.
-```{r setup, echo=FALSE}
+My github repository for this assignment can be found at \texttt{https://github.com/lengie/577Spring16}. This document was created using R markdown and has the code and results imbedded directly into the pdf. First, the necessary packages are loaded into R. I am using R version 3.3.0.
+```{r setup, results="hide"}
 library(ggplot2)
 library(DNAshapeR)
 library(caret)
 library(AnnotationHub)
+library(rtracklayer)
+library(BSgenome.Mmusculus.UCSC.mm10)
+library(e1071)
+library(ROCR)
 ```
 
 ## High Throughput Binding Assays
 
 Systematic evolution of ligands by exponential enrichment with next-gen sequencing, or SELEX-seq, is an iterative \textit{in vitro} method that identifies DNA sequences that bind to the desired protein or peptide. A large DNA library is generated and the protein is introduced. Those that bind the protein are separated from the unbound DNA and these are sequenced and used as the new DNA library. Cycles are repeated with different selection criteria. SELEX-seq selects moderate to highly selective binding sites, identifies more sites than traditional SELEX, and requires fewer iterations.
-    
-    Protein binding microarrays, or PBMs, is a procedure that involves a surface where tens of thousands of double stranded DNA sequences are bound. Multiple proteins can be applied and the amount of bound protein is quantified using fluorescence.
-    
-    Chromatin immuno precipitation sequencing, also known as ChIP-seq, identifies DNA binding sites \textit{in vivo}. Cells are lysed and their DNA sonicated. Antibodies targeted to the desired protein are added and the proteins, with the DNA it's bound to, are pulled out via beads that are attached to the antibodies. The proteins are unlinked from the DNA pieces and these segments are sequenced.
+
+Protein binding microarrays, or PBMs, is a procedure that involves a surface where tens of thousands of double stranded DNA sequences are bound. Multiple proteins can be applied and the amount of bound protein is quantified using fluorescence.
+
+Chromatin immuno precipitation sequencing, also known as ChIP-seq, identifies DNA binding sites \textit{in vivo}. Cells are lysed and their DNA sonicated. Antibodies targeted to the desired protein are added and the proteins, with the DNA it's bound to, are pulled out via beads that are attached to the antibodies. The proteins are unlinked from the DNA pieces and these segments are sequenced.
 
 
 ## Building prediction models for \textit{in vitro} data
 
-\textit{In vitro} data from gcPBM is used in the following section. We will compare prediction models using sequence alone ("1-mer" sequence model) versus sequence and shape features together ("1-mer+shape" model).
+\textit{In vitro} data from gcPBM is used in the following section. We will compare prediction models using sequence alone ("1-mer" sequence model) versus sequence and shape features together ("1-mer+shape" model). The \texttt{caret} package allows us to run simple machine learning algorithms on the data, splitting the data into training and test data. We will look at predicting DNA binding using shape and sequence or sequence alone, then compare the coefficients of determination. These, the $R^{2}$ values, will help us compare the two methods. Code results are hidden so outputted code and warnings are not displayed. A visual comparison follows in the next block of code.
 
-```{r prep}
+```{r prep, results="hide"}
 #shape prediction
 md <- "Mad.txt.fa"
 predMd <- getShape(md)
@@ -40,13 +40,15 @@ myc <- "Myc.txt.fa"
 predMyc <- getShape(myc)
 
 #Feature vectors for each data set
-featureType <- c("1-mer", "1-shape")
+#It's going to be a bit messy with a lot of repeats; could code a function instead
+featureType <- "1-mer"
+featureTypeB <- c("1-mer", "1-shape")
 featVectMd <- encodeSeqShape(md,predMd,featureType)
 featVectMx <- encodeSeqShape(mx,predMx,featureType)
 featVectMyc <- encodeSeqShape(myc,predMyc,featureType)
-#head(featVectMd)
-#head(featVectMx)
-#head(featVectMyc)
+featVectMd2 <- encodeSeqShape(md,predMd,featureTypeB)
+featVectMx2 <- encodeSeqShape(mx,predMx,featureTypeB)
+featVectMyc2 <- encodeSeqShape(myc,predMyc,featureTypeB)
 
 md_data <- read.table("Mad.txt")
 mx_data <- read.table("Max.txt")
@@ -55,42 +57,183 @@ myc_data <- read.table("Myc.txt")
 dfMd <- data.frame(affinity=md_data$V2, featVectMd)
 dfMx <- data.frame(affinity=mx_data$V2, featVectMx)
 dfMyc <- data.frame(affinity=myc_data$V2, featVectMyc)
+dfMd2 <- data.frame(affinity=md_data$V2, featVectMd2)
+dfMx2 <- data.frame(affinity=mx_data$V2, featVectMx2)
+dfMyc2 <- data.frame(affinity=myc_data$V2, featVectMyc2)
 
-#Settings for caret package
+#Settings for caret package, 10fold cross validation for LR
 trainControl <- trainControl(method = "cv", number = 10, savePredictions = TRUE)
 
 #Prediction without (then with) L2-regularized
-modelMd <- train (affinity~ ., data = dfMd, trControl=trainControl,
-method = "lm", preProcess=NULL)
-
-modelMd2 <- train(affinity~., data = dfMd, trControl=trainControl,
-method = "glmnet", tuneGrid = data.frame(alpha = 0, lambda = c(2^c(-15:15))))
-
-modelMx <- train (affinity~ ., data = dfMx, trControl=trainControl,
-method = "lm", preProcess=NULL)
-
-modelMx2 <- train(affinity~., data = dfMx, trControl=trainControl,
-method = "glmnet", tuneGrid = data.frame(alpha = 0, lambda = c(2^c(-15:15))))
-
-modelMyc <- train (affinity~ ., data = dfMyc, trControl=trainControl,
-method = "lm", preProcess=NULL)
-
-modelMyc2 <- train(affinity~., data = dfMyc, trControl=trainControl,
-method = "glmnet", tuneGrid = data.frame(alpha = 0, lambda = c(2^c(-15:15))))
-
-#Outputting the actual data
-summary(modelMd)
-modelMd2
-summary(modelMx)
-modelMx2
-summary(modelMyc)
-modelMyc2
+modelMd <- train(affinity~., data = dfMd, trControl=trainControl,
+                  method = "glmnet", tuneGrid = data.frame(alpha = 0, lambda = c(2^c(-15:15))))
+modelMd2 <- train(affinity~., data = dfMd2, trControl=trainControl,
+                  method = "glmnet", tuneGrid = data.frame(alpha = 0, lambda = c(2^c(-15:15))))
+modelMx <- train(affinity~., data = dfMx, trControl=trainControl,
+                  method = "glmnet", tuneGrid = data.frame(alpha = 0, lambda = c(2^c(-15:15))))
+modelMx2 <- train(affinity~., data = dfMx2, trControl=trainControl,
+                  method = "glmnet", tuneGrid = data.frame(alpha = 0, lambda = c(2^c(-15:15))))
+modelMyc <- train(affinity~., data = dfMyc, trControl=trainControl,
+                   method = "glmnet", tuneGrid = data.frame(alpha = 0, lambda = c(2^c(-15:15))))
+modelMyc2 <- train(affinity~., data = dfMyc2, trControl=trainControl,
+                   method = "glmnet", tuneGrid = data.frame(alpha = 0, lambda = c(2^c(-15:15))))
 ```
 
+So now we have the models of all three experiments, with either sequence alone or sequence and shape as a feature. We look at the mean R-sequared values, as well as the maximum $R^{2}$ per dataset.
+```{r tables}
+mean(modelMd$results$Rsquared,na.rm=TRUE)
+mean(modelMx$results$Rsquared,na.rm=TRUE)
+mean(modelMyc$results$Rsquared,na.rm=TRUE)
+MdSeq <- max(modelMd$results$Rsquared,na.rm=TRUE)
+MxSeq <- max(modelMx$results$Rsquared,na.rm=TRUE)
+MycSeq <- max(modelMyc$results$Rsquared,na.rm=TRUE)
+
+mean(modelMd2$results$Rsquared,na.rm=TRUE)
+mean(modelMx2$results$Rsquared,na.rm=TRUE)
+mean(modelMyc2$results$Rsquared,na.rm=TRUE)
+MdShpSeq <- max(modelMd2$results$Rsquared,na.rm=TRUE)
+MxShpSeq <- max(modelMx2$results$Rsquared,na.rm=TRUE)
+MycShpSeq <- max(modelMyc2$results$Rsquared,na.rm=TRUE)
+```
+# High throughput \textit{in vitro} data analysis
+
+From this data we can create a graph that compares the performance of the sequence alone versus sequence plus shape. The average values are actually not too far from each other. The $R^{2}$ values for the sequence+shape are .01 to .02 better than that of sequence alone, which is difficult to see on a graph. So, the following plot takes the maximum values for each and plots them against each other.
 ```{r performance graphs}
+rsq <- data.frame(c(MdSeq,MxSeq,MycSeq),c(MdShpSeq,MxShpSeq,MycShpSeq))
+colnames(rsq) = c("Seq","ShpSeq")
+ggplot(rsq,aes(x=Seq,y=ShpSeq))+xlim(c(0,1)) + ylim(c(0,1)) + xlab("R^2 w/ Sequence Alone") + ylab("R^2 w/ Sequence+Shape")+geom_point()+geom_abline(intercept=0,slope=1)
+```
+From the graph it is possibe to see that sequence and shape together did a better job of predicting DNA binding. Stronger evidence would be to show that the p-value indicates that this difference is significant. We have two samples that are not independent. I will use the Wilcox rank sum test to compare two related samples.
+```{r wilcox}
+wilcox.test(c(MdSeq,MxSeq,MycSeq),c(MdShpSeq,MxShpSeq,MycShpSeq),paired = TRUE)
+```
+PBM data, as stated above, shows the binding of proteins to DNA. The results show that using sequence to predict the binding of said proteins is not as strong as using both the sequence and the DNA shape for those sequences (which takes more local information into account).
 
+## High throughput \textit{in vivo} data analysis
+
+First ChIP-seq data for the CTCF transcription factor of \textit{Mus musculus} is saved as a fasta file, prepped via the Annotation Hub package.
+```{r annotation}
+ah <- AnnotationHub()
+unique(ah$dataprovider)
+unique(ah$species)
+
+ah <- subset(ah, species == "Mus musculus")
+ah
+```
+From this we see a list of all data available for \textit{Mus musculus}, which, honestly, wasn't really necessary because Tsu-Pei has already provided the ID for the data that we need:
+```{r fasta}
+CTCF <- ah[["AH28451"]]
+seqlevelsStyle(CTCF) <- "UCSC"
+getFasta(CTCF, BSgenome.Mmusculus.UCSC.mm10, width = 150, filename = "CTCF.fa")
+```
+Now, DNAshapeR is used to generate emsemble plots for: minor groove width, propeller twist, roll, helix twist. I felt that the metaprofiles were more clear than the heat maps, so I am using those in this report. The following graphs plot a sequence of means for consecutive instances of the selected variable.
+```{r MusShape}
+predMus <- getShape("CTCF.fa")
+#Minor groove width
+plotShape(predMus$MGW)
+#Propeller twist
+plotShape(predMus$ProT)
+#Roll
+plotShape(predMus$Roll)
+#Helix twist
+plotShape(predMus$HelT)
+```
+%\includegraphics[width=.8\linewidth]{577_3_2_ShapeMaps.png}
+
+B-DNA is known to have a helix twist of about 36 degrees, while A-DNA has a twist of 32.7 degrees. We can see that the helix twist of the data is sort of in between, holding a range between 34-35 degrees. B-DNA also has a smaller minor groove width than A-DNA. The minor groove width throughout this data is more indicative of B-DNA. Propeller twist of both A and B-DNA, however, is 0, as the two base pairs that align with each other tend to sit flat. In this base, the bases are rotated in relation to each other. There is also a slight roll, where the stacked base pairs are at a slight angle in relation to each other. These distortions would seem to be caused by the binding of the CTCF transcription factor to the DNA, or, perhaps, the distortions in the data allow for the binding of the TF.
+
+For the last portion of this report, I redownload the CTCF data to make a file of only 30 basepairs. This is called the "bound" data, and a function follows that generates sequences from random genomic regions that are not overlapped with the "bound" data. This is called "unbound" data. 
+
+
+```{r vivo}
+sampleSize <- 1000
+
+# Reducing the sequence length of bound ChIP-seq data
+getFasta(CTCF, BSgenome.Mmusculus.UCSC.mm10, width = 30, filename = "bound.fa" )
+
+# Unbound
+chrName <- names(Mmusculus)[1:22]
+chrLength <- seqlengths(Mmusculus)[1:22]
+
+#Initialize 
+randomGr <- GRanges()
+while ( length(randomGr) < sampleSize ) {
+     #take a random chromosome, without replacement
+     tmpChrName <- sample(chrName, 1)
+     tmpChrLength <- chrLength[tmpChrName]
+     tmpGRanges <- GRanges(seqnames = tmpChrName, strand = "+",
+                            IRanges(start = sample(1:(tmpChrLength-30),1), 
+                                    width = 30))
+     #check to make sure there are no overlaps with the bound data
+     if( length(findOverlaps(CTCF, tmpGRanges)) == 0 ){
+          randomGr <- c( randomGr, tmpGRanges)
+          print(length(randomGr))
+     }else{
+          print(paste(length(randomGr), "overlap"))
+     }
+}
+# Overlap checking
+findOverlaps(CTCF, randomGr)
+# Fasta file generation
+getFasta(randomGr, BSgenome.Mmusculus.UCSC.mm10, width = 30, filename = "unbound.fa")
+
+
+## Merge bound and unbound data
+# Combine two datasets and generate one file
+boundFasta <- readBStringSet("bound.fa")
+boundFasta <- sample(boundFasta, sampleSize) # Only randomly choose fixed size of data for sampling
+unboundFasta <- readBStringSet("unbound.fa")
+names(unboundFasta) <- paste0( names(unboundFasta), "_unbound")
+writeXStringSet( c(boundFasta, unboundFasta), "ctcf.fa" )
+
+# Generate binding classfication file
+boundTxt <- cbind( sapply(1:length(boundFasta), 
+                          function(x) as.character(boundFasta[[x]])), 
+                   matrix(1, length(boundFasta), 1))
+unboundTxt <- cbind( sapply(1:length(unboundFasta),
+                            function(x) as.character(unboundFasta[[x]])),
+                     matrix(0, length(unboundFasta), 1))
+write.table(rbind(boundTxt, unboundTxt), "ctcf.txt", 
+            quote = FALSE, col.names = FALSE, row.names = FALSE)
 ```
 
 
+Logistic regression models for "1-mer" and "1-mer+shape" features, as performed earlier, are done on this data. 
+```{r logistics}
+## DNAshapeR prediction
+shapePred <- getShape("ctcf.fa")
 
+## Encode feature vectors
+#featureType was generated earlier in the file and is the same
+featureVector <- encodeSeqShape("ctcf.fa", shapePred, featureType)
+
+## Perform logistic regression
+exp_data <- read.table("ctcf.txt")
+# Prepare data
+exp_data$V2 <- ifelse(exp_data$V2 == 1 , "Y", "N")
+df <- data.frame(isBound = exp_data$V2, featureVector)
+# Set parameters for Caret
+trainControl <- trainControl(method = "cv", number = 2, 
+                             savePredictions = TRUE, classProbs = TRUE)
+# Perform prediction
+model <- train(isBound~ ., data = df, trControl = trainControl,
+               method = "glm", family = binomial, metric ="ROC")
+summary(model)
+
+## Plot AUROC
+prediction <- prediction( model$pred$Y, model$pred$obs )
+performance <- performance( prediction, "tpr", "fpr" )
+plot(performance)
+
+## Caluculate AUROC
+auc <- performance(prediction, "auc")
+auc <- unlist(slot(auc, "y.values"))
+auc
+```
+Discuss what learned from results
+
+## Prediction models for \textot{in virtro} data
+
+We want to be able to generate sequences from random genomic regions which do not overlap with genomic regions from the ChIP-seq data. For ease of computation, the data is trimmed to 30bps per sequence with a sample size of 1000 for both bound and unbound
+[Only perform 2-fold cross validation and no need to calculate the average r-squared for this question]
 
