@@ -142,8 +142,9 @@ plotShape(predMus$HelT)
 
 B-DNA is known to have a helix twist of about 36 degrees, while A-DNA has a twist of 32.7 degrees. We can see that the helix twist of the data is sort of in between, holding a range between 34-35 degrees. B-DNA also has a smaller minor groove width than A-DNA. The minor groove width throughout this data is more indicative of B-DNA. Propeller twist of both A and B-DNA, however, is 0, as the two base pairs that align with each other tend to sit flat. In this base, the bases are rotated in relation to each other. There is also a slight roll, where the stacked base pairs are at a slight angle in relation to each other. These distortions would seem to be caused by the binding of the CTCF transcription factor to the DNA, or, perhaps, the distortions in the data allow for the binding of the TF.
 
-For the last portion of this report, I redownload the CTCF data to make a file of only 30 basepairs. This is called the "bound" data, and a function follows that generates sequences from random genomic regions that are not overlapped with the "bound" data. This is called "unbound" data. 
+## Prediction models for \textot{in virtro} data
 
+For the last portion of this report, I redownload the CTCF data to make a file of only 30 basepairs. We want to be able to generate sequences from random genomic regions which do not overlap with genomic regions from the ChIP-seq data. 
 
 ```{r vivo}
 sampleSize <- 1000
@@ -161,6 +162,7 @@ while ( length(randomGr) < sampleSize ) {
      #take a random chromosome, without replacement
      tmpChrName <- sample(chrName, 1)
      tmpChrLength <- chrLength[tmpChrName]
+     #Keep the size of the sequence the same as the bound data
      tmpGRanges <- GRanges(seqnames = tmpChrName, strand = "+",
                             IRanges(start = sample(1:(tmpChrLength-30),1), 
                                     width = 30))
@@ -169,7 +171,7 @@ while ( length(randomGr) < sampleSize ) {
           randomGr <- c( randomGr, tmpGRanges)
           print(length(randomGr))
      }else{
-          print(paste(length(randomGr), "overlap"))
+          print(paste(length(randomGr), "There is overlap with bound"))
      }
 }
 # Overlap checking
@@ -184,7 +186,7 @@ boundFasta <- readBStringSet("bound.fa")
 boundFasta <- sample(boundFasta, sampleSize) # Only randomly choose fixed size of data for sampling
 unboundFasta <- readBStringSet("unbound.fa")
 names(unboundFasta) <- paste0( names(unboundFasta), "_unbound")
-writeXStringSet( c(boundFasta, unboundFasta), "ctcf.fa" )
+writeXStringSet( c(boundFasta, unboundFasta), "AllCTCF.fa" )
 
 # Generate binding classfication file
 boundTxt <- cbind( sapply(1:length(boundFasta), 
@@ -193,7 +195,7 @@ boundTxt <- cbind( sapply(1:length(boundFasta),
 unboundTxt <- cbind( sapply(1:length(unboundFasta),
                             function(x) as.character(unboundFasta[[x]])),
                      matrix(0, length(unboundFasta), 1))
-write.table(rbind(boundTxt, unboundTxt), "ctcf.txt", 
+write.table(rbind(boundTxt, unboundTxt), "AllCTCF.txt", 
             quote = FALSE, col.names = FALSE, row.names = FALSE)
 ```
 
@@ -201,26 +203,31 @@ write.table(rbind(boundTxt, unboundTxt), "ctcf.txt",
 Logistic regression models for "1-mer" and "1-mer+shape" features, as performed earlier, are done on this data. 
 ```{r logistics}
 ## DNAshapeR prediction
-shapePred <- getShape("ctcf.fa")
+BUnbPred <- getShape("AllCTCF.fa")
 
 ## Encode feature vectors
-#featureType was generated earlier in the file and is the same
-featureVector <- encodeSeqShape("ctcf.fa", shapePred, featureType)
+#featureType and featureTypeBoth were generated earlier in the file and is the same
+featureVector <- encodeSeqShape("AllCTCF.fa", BUnbPred, featureType)
+featureVector2 <- encodeSeqShape("AllCTCF.fa", BUnbPred, featureTypeB)
 
-## Perform logistic regression
-exp_data <- read.table("ctcf.txt")
+## Perform logistic regression using caret
+exp_data <- read.table("AllCTCF.txt")
 # Prepare data
 exp_data$V2 <- ifelse(exp_data$V2 == 1 , "Y", "N")
-df <- data.frame(isBound = exp_data$V2, featureVector)
+df1 <- data.frame(isBound = exp_data$V2, featureVector)
+df2 <- data.frame(isBound = exp_data$V2, featureVector2)
 # Set parameters for Caret
 trainControl <- trainControl(method = "cv", number = 2, 
                              savePredictions = TRUE, classProbs = TRUE)
 # Perform prediction
-model <- train(isBound~ ., data = df, trControl = trainControl,
+model1 <- train(isBound~ ., data = df1, trControl = trainControl,
                method = "glm", family = binomial, metric ="ROC")
-summary(model)
+model2 <- train(isBound~ ., data = df2, trControl = trainControl,
+               method = "glm", family = binomial, metric ="ROC")
+summary(model1)
+summary(model2)
 
-## Plot AUROC
+## Plot the AUROC graph
 prediction <- prediction( model$pred$Y, model$pred$obs )
 performance <- performance( prediction, "tpr", "fpr" )
 plot(performance)
@@ -231,9 +238,4 @@ auc <- unlist(slot(auc, "y.values"))
 auc
 ```
 Discuss what learned from results
-
-## Prediction models for \textot{in virtro} data
-
-We want to be able to generate sequences from random genomic regions which do not overlap with genomic regions from the ChIP-seq data. For ease of computation, the data is trimmed to 30bps per sequence with a sample size of 1000 for both bound and unbound
-[Only perform 2-fold cross validation and no need to calculate the average r-squared for this question]
 
